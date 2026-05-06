@@ -55,10 +55,10 @@ class Config:
         """
         Ensure configuration parameters are not corrupt.
         """
-        if not isinstance(self.config_dto.seed_urls, list) or len(self.config_dto.seed_urls) == 0:
-            raise ValueError("seed_urls must be a non-empty list")
-        if not isinstance(self.config_dto.total_articles_to_find_and_parse, int) or self.config_dto.total_articles_to_find_and_parse <= 0:
-            raise ValueError("total_articles_to_find_and_parse must be a positive integer")
+        if not isinstance(self.config_dto.seed_urls, list):
+            raise ValueError("seed_urls must be a list")
+        if not isinstance(self.config_dto.total_articles, int) or self.config_dto.total_articles < 0:
+            raise ValueError("total_articles must be a non-negative integer")
         if not isinstance(self.config_dto.timeout, int) or self.config_dto.timeout <= 0:
             raise ValueError("timeout must be a positive integer")
 
@@ -78,7 +78,7 @@ class Config:
         Returns:
             int: Total number of articles to scrape
         """
-        return self.config_dto.total_articles_to_find_and_parse
+        return self.config_dto.total_articles
 
     def get_headers(self) -> dict[str, str]:
         """
@@ -178,13 +178,11 @@ class Crawler:
         Returns:
             str: Url from HTML
         """
-        link_tag = article_bs.find('a', href=True)
-        if link_tag:
-            href = link_tag.get('href')
-            if href.startswith('news.php?id='):
-                return f"https://fabulae.ru/{href}"
-            elif href.startswith('http'):
+        href = article_bs.get('href', '')
+        if 'news.php?id=' in href:
+            if href.startswith('http'):
                 return href
+            return f"https://fabulae.ru/{href}"
         return ""
 
     def find_articles(self) -> None:
@@ -192,36 +190,30 @@ class Crawler:
         Find articles.
         """
         for seed_url in self.seed_urls:
+            if self.total_articles > 0 and len(self.urls_to_crawl) >= self.total_articles:
+                break
             try:
                 response = make_request(seed_url, self.config)
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.content, 'html.parser')
-                    article_links = soup.find_all('a', href=re.compile(r'news\.php\?id=\d+'))
+                    all_links = soup.find_all('a')
                     
-                    for link in article_links:
-                        if len(self.urls_to_crawl) >= self.total_articles:
+                    for link in all_links:
+                        if self.total_articles > 0 and len(self.urls_to_crawl) >= self.total_articles:
                             break
-                        url = link.get('href')
-                        if url:
-                            if url.startswith('news.php?id='):
-                                full_url = f"https://fabulae.ru/{url}"
+                        href = link.get('href', '')
+                        if 'news.php?id=' in href:
+                            if href.startswith('news.php?id='):
+                                full_url = f"https://fabulae.ru/{href}"
+                            elif href.startswith('http'):
+                                full_url = href
                             else:
-                                full_url = url
+                                full_url = f"https://fabulae.ru/{href}"
+                            
                             if full_url not in self.urls_to_crawl:
                                 self.urls_to_crawl.append(full_url)
-                else:
-                    print(f"Failed to fetch {seed_url}: {response.status_code}")
             except Exception as e:
                 print(f"Error fetching {seed_url}: {e}")
-
-    def get_search_urls(self) -> list:
-        """
-        Get seed_urls param.
-
-        Returns:
-            list: seed_urls param
-        """
-        return self.seed_urls
 
 
 
@@ -280,6 +272,11 @@ class HTMLParser:
         Args:
             article_soup (bs4.BeautifulSoup): BeautifulSoup instance
         """
+        title_tag = article_soup.find('h1')
+        if title_tag:
+            self.article.title = title_tag.get_text(strip=True)
+        else:
+            self.article.title = "Без заголовка"
         content_div = article_soup.find('div', class_='news_text')
         if not content_div:
             content_div = article_soup.find('div', class_='content')
@@ -288,9 +285,8 @@ class HTMLParser:
                 unwanted.decompose()
             text = content_div.get_text(separator='\n', strip=True)
             self.article.text = text
-        title_tag = article_soup.find('h1')
-        if title_tag:
-            self.article.title = title_tag.get_text(strip=True)
+        else:
+            self.article.text = ""
 
     def _fill_article_with_meta_information(self, article_soup: BeautifulSoup) -> None:
         """
