@@ -196,7 +196,6 @@ def make_request(url: str, config: Config) -> requests.models.Response:
     except requests.RequestException:
         response = requests.Response()
         response.status_code = 404
-        response._content = b''
         return response
 
 
@@ -341,7 +340,9 @@ class HTMLParser:
                 lines = text.split('\n')
                 for line in lines:
                     line = line.strip()
-                    if len(line) > 20 and not line.startswith('Тип:') and not line.startswith('Раздел:'):
+                    if (len(line) > 20 and
+                        not line.startswith('Тип:') and
+                        not line.startswith('Раздел:')):
                         text_blocks.append(line)
         self.article.text = '\n\n'.join(text_blocks)
         print(f"Article {self.article_id}: extracted {len(self.article.text)} characters")
@@ -353,8 +354,9 @@ class HTMLParser:
         Args:
             article_soup (bs4.BeautifulSoup): BeautifulSoup instance
         """
+        # pylint: disable=too-many-locals
         author_tag = (article_soup.find('div', class_='author') or
-                  article_soup.find('span', class_='author'))
+              article_soup.find('span', class_='author'))
         if not author_tag:
             author_link = article_soup.find('a', href=re.compile(r'/autors_b\.php\?id='))
             if author_link:
@@ -382,7 +384,8 @@ class HTMLParser:
             if not date_found:
                 self.article.date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         topics = []
-        topic_tags = article_soup.find_all('a', class_='topic') or article_soup.find_all('div', class_='category')
+        topic_tags = (article_soup.find_all('a', class_='topic') or
+              article_soup.find_all('div', class_='category'))
         for tag in topic_tags:
             topic_text = tag.get_text(strip=True)
             if topic_text and topic_text not in topics:
@@ -464,7 +467,7 @@ def main() -> None:
         for idx, url in enumerate(crawler.urls[:config.get_num_articles()], 1):
             parser = HTMLParser(url, idx, config)
             article = parser.parse()
-            if article and len(article.text) > 50:
+            if isinstance(article, Article) and len(article.text) > 50:
                 to_raw(article)
                 to_meta(article)
                 saved_count += 1
