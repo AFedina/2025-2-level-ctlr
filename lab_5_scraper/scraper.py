@@ -362,6 +362,12 @@ class HTMLParser:
         author_tag = article_soup.find('div', class_='author')
         if not author_tag:
             author_tag = article_soup.find('span', class_='author')
+        if not author_tag:
+            author_link = article_soup.find('a', href=re.compile(r'/autors_b\.php\?id='))
+            if author_link:
+                author_tag = author_link.find('span', itemprop='name')
+                if not author_tag:
+                    author_tag = author_link
         if author_tag:
             self.article.author = [author_tag.get_text(strip=True)]
         else:
@@ -373,14 +379,32 @@ class HTMLParser:
             date_text = date_tag.get_text(strip=True)
             self.article.date = self.unify_date_format(date_text)
         else:
-            self.article.date = datetime.datetime.now()
+            date_found = False
+            for text in article_soup.stripped_strings:
+                match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', text)
+                if match:
+                    day, month, year = match.groups()
+                    self.article.date = datetime.datetime(int(year), int(month), int(day), 0, 0, 0)
+                    date_found = True
+                    break
+            if not date_found:
+                for cell in article_soup.find_all('td'):
+                    if 'Дата:' in cell.get_text():
+                        date_text = cell.get_text().replace('Дата:', '').strip()
+                        self.article.date = self.unify_date_format(date_text)
+                        date_found = True
+                        break
+            if not date_found:
+                self.article.date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         topics = []
         topic_tags = article_soup.find_all('a', class_='topic')
         if not topic_tags:
             topic_tags = article_soup.find_all('div', class_='category')
         for tag in topic_tags:
-            topics.append(tag.get_text(strip=True))
-        self.article.topics = topics if topics else ["General"]
+            topic_text = tag.get_text(strip=True)
+            if topic_text and topic_text not in topics:
+                topics.append(topic_text)
+        self.article.topics = topics
 
     def unify_date_format(self, date_str: str) -> datetime.datetime:
         """
@@ -457,7 +481,7 @@ def main() -> None:
         for idx, url in enumerate(crawler.urls[:config.get_num_articles()], 1):
             parser = HTMLParser(url, idx, config)
             article = parser.parse()
-            if article:
+            if article and len(article.text) > 50:
                 to_raw(article)
                 to_meta(article)
                 saved_count += 1
