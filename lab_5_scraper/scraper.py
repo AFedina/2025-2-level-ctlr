@@ -70,7 +70,6 @@ class Config:
         """
         with open(self.path_to_config, 'r', encoding='utf-8') as f:
             config_data = json.load(f)
-        
         return ConfigDTO(
             seed_urls=config_data.get('seed_urls', []),
             headers=config_data.get('headers', {}),
@@ -195,7 +194,10 @@ def make_request(url: str, config: Config) -> requests.models.Response:
         response.encoding = config.get_encoding()
         return response
     except requests.RequestException:
-        return None
+        response = requests.Response()
+        response.status_code = 404
+        response._content = b''
+        return response
 
 
 class Crawler:
@@ -253,7 +255,6 @@ class Crawler:
                 article_url = self._extract_url(link)
                 if article_url and article_url not in self.urls:
                     self.urls.append(article_url)
-    
     def get_search_urls(self) -> list:
         """
         Get seed_urls param.
@@ -352,7 +353,7 @@ class HTMLParser:
         Args:
             article_soup (bs4.BeautifulSoup): BeautifulSoup instance
         """
-        author_tag = (article_soup.find('div', class_='author') or 
+        author_tag = (article_soup.find('div', class_='author') or
                   article_soup.find('span', class_='author'))
         if not author_tag:
             author_link = article_soup.find('a', href=re.compile(r'/autors_b\.php\?id='))
@@ -363,7 +364,23 @@ class HTMLParser:
         if date_tag:
             self.article.date = self.unify_date_format(date_tag.get_text(strip=True))
         else:
-            self._find_date_in_html(article_soup)
+            date_found = False
+            for text in article_soup.stripped_strings:
+                match = re.search(r'(\d{2})[./](\d{2})[./](\d{4})', text)
+                if match:
+                    day, month, year = match.groups()
+                    self.article.date = datetime.datetime(int(year), int(month), int(day), 0, 0, 0)
+                    date_found = True
+                    break
+            if not date_found:
+                for cell in article_soup.find_all('td'):
+                    if 'Дата:' in cell.get_text():
+                        date_text = cell.get_text().replace('Дата:', '').strip()
+                        self.article.date = self.unify_date_format(date_text)
+                        date_found = True
+                        break
+            if not date_found:
+                self.article.date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         topics = []
         topic_tags = article_soup.find_all('a', class_='topic') or article_soup.find_all('div', class_='category')
         for tag in topic_tags:
@@ -411,14 +428,14 @@ class HTMLParser:
         try:
             response = make_request(self.full_url, self.config)
             if not response or response.status_code != 200:
-                return None
+                return False
             soup = BeautifulSoup(response.content, 'html.parser')
             self._fill_article_with_text(soup)
             self._fill_article_with_meta_information(soup)
             return self.article
         except (requests.RequestException, AttributeError, ValueError) as e:
             print(f"Error parsing {self.full_url}: {e}")
-            return None
+            return False
 
 
 def prepare_environment(base_path: pathlib.Path | str) -> None:
