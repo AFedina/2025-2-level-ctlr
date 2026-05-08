@@ -461,7 +461,7 @@ def main() -> None:
                 to_raw(article)
                 saved_count += 1
                 print(f"Saved article {idx}: {url}")
-        print(f"\nSuccessfully saved {saved_count} articles to {ASSETS_PATH / 'articles'}")
+        print(f"\nSuccessfully saved {saved_count} articles to {ASSETS_PATH}")
     except (IncorrectSeedURLError, NumberOfArticlesOutOfRangeError,
             IncorrectNumberOfArticlesError, IncorrectHeadersError,
             IncorrectEncodingError, IncorrectTimeoutError,
