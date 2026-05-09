@@ -354,52 +354,48 @@ class HTMLParser:
         Args:
             article_soup (bs4.BeautifulSoup): BeautifulSoup instance
         """
-        # pylint: disable=too-many-locals
         author_tag = (article_soup.find('div', class_='author') or
-              article_soup.find('span', class_='author'))
+                    article_soup.find('span', class_='author'))
         if not author_tag:
             author_link = article_soup.find('a', href=re.compile(r'/autors_b\.php\?id='))
             if author_link:
                 author_tag = author_link.find('span', itemprop='name') or author_link
-        self.article.author = [author_tag.get_text(strip=True)] if author_tag else ["NOT FOUND"]
-        date_found = False
+        self.article.author = (
+            [author_tag.get_text(strip=True)] if author_tag else ["NOT FOUND"]
+        )
+        date_text = None
         date_span = article_soup.find('span', itemprop='datePublished')
         if date_span:
             date_text = date_span.get_text(strip=True)
-            self.article.date = self.unify_date_format(date_text)
-            date_found = True
-        if not date_found:
+        if not date_text:
             date_tag = (article_soup.find('div', class_='date') or
-            article_soup.find('span', class_='date'))
+                        article_soup.find('span', class_='date'))
             if date_tag:
                 date_text = date_tag.get_text(strip=True)
-                self.article.date = self.unify_date_format(date_text)
-                date_found = True
-        if not date_found:
+        if not date_text:
             for cell in article_soup.find_all('td'):
                 if 'Дата:' in cell.get_text():
                     date_text = cell.get_text().replace('Дата:', '').strip()
-                    self.article.date = self.unify_date_format(date_text)
-                    date_found = True
                     break
-        if not date_found:
+        if not date_text:
             for text in article_soup.stripped_strings:
                 match = re.search(r'(\d{2}):(\d{2})\s+(\d{2})\.(\d{2})\.(\d{4})', text)
                 if match:
-                    hour, minute, day, month, year = match.groups()
+                    parts = match.groups()
                     self.article.date = datetime.datetime(
-                        int(year), int(month), int(day), int(hour), int(minute), 0
+                        int(parts[4]), int(parts[3]), int(parts[2]), 
+                        int(parts[0]), int(parts[1]), 0
                     )
-                    date_found = True
                     break
-        if not date_found:
-            self.article.date = datetime.datetime.now().replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
+            else:
+                self.article.date = datetime.datetime.now().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+        else:
+            self.article.date = self.unify_date_format(date_text)
         topics = []
-        topic_tags = (article_soup.find_all('a', class_='topic') or
-              article_soup.find_all('div', class_='category'))
-        for tag in topic_tags:
+        for tag in (article_soup.find_all('a', class_='topic') or
+                    article_soup.find_all('div', class_='category')):
             topic_text = tag.get_text(strip=True)
             if topic_text and topic_text not in topics:
                 topics.append(topic_text)
